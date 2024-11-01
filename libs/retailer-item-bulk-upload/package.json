@@ -1,0 +1,9 @@
+{
+  "name": "@supy/retailer-item-bulk-upload",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "@supy/common": "file:../common"
+  }
+}

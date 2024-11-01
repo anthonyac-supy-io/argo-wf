@@ -1,0 +1,90 @@
+ARG ALPINE_NODE=node:22.6.0-alpine
+ARG APP_NAME=retailer-item-bulk-upload
+
+# --- base ---
+FROM $ALPINE_NODE AS node
+
+ENV CI=true
+RUN apk update && apk add jq
+
+WORKDIR /usr/app
+# --- end base ---
+
+# --- install ---
+FROM node AS install
+
+COPY .npmrc .
+COPY package.json .
+COPY package-lock.json .
+
+ENV NODE_ENV=development
+
+RUN npm ci --omit=optional --ignore-scripts
+# --- end install ---
+
+# --- copy ---
+FROM install AS copy
+
+COPY . .
+# --- end copy ---
+
+# --- build ---
+FROM copy AS build
+
+RUN apk update
+RUN apk add git
+
+ARG BUILD_CONFIG
+ARG APP_NAME
+
+ARG NX_CI_EXECUTION_ID
+ARG NX_CLOUD_ACCESS_TOKEN
+ARG NX_CLOUD_ENCRYPTION_KEY
+ARG NX_CLOUD_ENV_NAME
+ARG NX_BRANCH
+ARG NX_RUN_GROUP
+ARG NX_SKIP_NX_CACHE
+
+RUN mkdir -p /workflow/output
+RUN chmod 777 /workflow/output
+
+RUN npx nx run $APP_NAME:lint
+# RUN npx nx run $APP_NAME:test
+
+RUN echo $APP_NAME
+
+RUN npx nx build $APP_NAME --configuration=$BUILD_CONFIG
+# --- end build ---
+
+# --- run ---
+FROM node AS run
+
+ARG APP_NAME
+ENV NODE_ENV=production
+
+ENV APP_NAME=$APP_NAME
+ENV SCRIPT_FILENAME="<PLACEHOLDER>"
+
+COPY --from=build /usr/app/.npmrc .
+COPY --from=build /usr/app/package.json .
+COPY --from=build /usr/app/package-lock.json .
+
+RUN npm ci --omit=dev --omit=optional --ignore-scripts
+
+COPY --from=build /usr/app/dist ./dist
+
+WORKDIR /usr/app/dist/libs/$APP_NAME
+
+COPY --from=build /usr/app/.npmrc .
+
+RUN npm install --omit=dev --omit=optional --ignore-scripts
+
+WORKDIR /usr/app
+
+RUN mkdir -p /workflow/output
+RUN chmod 777 /workflow/output
+
+USER root
+
+CMD node dist/libs/$APP_NAME/src/lib/api/$SCRIPT_FILENAME
+# --- end run ---

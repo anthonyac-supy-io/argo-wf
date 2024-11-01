@@ -1,0 +1,41 @@
+{
+  "name": "retailer-item-bulk-upload",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "libs/retailer-item-bulk-upload/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "@nrwl/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/libs/retailer-item-bulk-upload",
+        "tsConfig": "libs/retailer-item-bulk-upload/tsconfig.lib.json",
+        "packageJson": "libs/retailer-item-bulk-upload/package.json",
+        "main": "libs/retailer-item-bulk-upload/src/index.ts",
+        "assets": ["libs/retailer-item-bulk-upload/*.md"]
+      },
+      "configurations": {
+        "production": {
+          "optimization": true,
+          "extractLicenses": true
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nrwl/linter:eslint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["libs/retailer-item-bulk-upload/**/*.ts"]
+      }
+    },
+    "test": {
+      "executor": "@nrwl/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "libs/retailer-item-bulk-upload/jest.config.ts",
+        "passWithNoTests": true
+      }
+    }
+  },
+  "tags": []
+}

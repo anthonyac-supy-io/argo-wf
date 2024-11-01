@@ -1,0 +1,206 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: nats-retailer-item-bulk-upload-dev
+  namespace: cicd
+spec:
+  template:
+    serviceAccountName: operate-workflow-sa
+  dependencies:
+    - name: nats-dep
+      eventSourceName: catalog-event-sources
+      eventName: retailer-item-bulk-upload-dev-event-sources
+
+  triggers:
+    - template:
+        name: retailer-item-bulk-upload
+        k8s:
+          operation: create
+          parameters:
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.userId
+              dest: spec.arguments.parameters.0.value 
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.retailerId
+              dest: spec.arguments.parameters.1.value 
+            - src:
+                dependencyName: nats-dep
+                dataTemplate: "{{ .Input.body.runUniqueId | lower | substr 0 9  }}"
+              dest: metadata.name
+              operation: append                                    
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                name: bulk-upload
+                namespace: cicd
+              spec:
+                serviceAccountName: operate-workflow-sa
+                entrypoint: bulk-upload
+                onExit: exit-handler
+                volumeClaimTemplates:            
+                - metadata:
+                    name: workdir                     
+                  spec:
+                    storageClassName: "standard-zone-pd"
+                    accessModes: [ "ReadWriteOnce" ]
+                    resources:
+                      requests:
+                        storage: 10Gi 
+                arguments:
+                  parameters:
+                  - name: userId 
+                  - name: retailerId
+                  - name: IMAGE_NAME
+                    valueFrom:
+                      configMapKeyRef:
+                        name: ribu-image
+                        key: DEV_IMAGE
+                templates:
+                - name: bulk-upload
+                  nodeSelector:
+                    supy_ops_node : "true"
+                  steps: 
+                  - - name: process-uploaded-items
+                      template: process-items
+                  - - name: upload-single-item
+                      template: upload-single-item
+                      arguments:
+                        parameters:
+                        - name: entityPath
+                          value: "{{item}}"
+                      withParam: "{{steps.process-uploaded-items.outputs.parameters.items-json}}"
+                - name: process-items
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args: ["node dist/libs/retailer-item-bulk-upload/src/lib/api/upload-entities.main.js --userId {{workflow.parameters.userId}} --retailerId {{workflow.parameters.retailerId}}"] 
+                    envFrom:
+                      - configMapRef:
+                          name: dev-ribu-env
+                    resources: # limit the resources
+                      limits:
+                        memory: 400Mi
+                        cpu: 1000m 
+                    volumeMounts:                     # same syntax as k8s Pod spec
+                    - name: workdir
+                      mountPath: /workflow/output 
+                  metadata:
+                    labels:
+                      app: bulk-upload-dev
+                  outputs:
+                    parameters:
+                    - name: items-json
+                      valueFrom:
+                        path: /workflow/output/successful-items.json
+
+                - name : upload-single-item
+                  retryStrategy:
+                    limit: "2"     
+                    retryPolicy: "Always"
+                  synchronization:
+                    semaphore:
+                      configMapKeyRef:
+                        name: bulk-upload-config
+                        key: template
+                  inputs: 
+                    parameters:
+                      - name: entityPath
+                  container:
+                    name: "single-item-upload-{{workflow.uid}}-{{pod.name}}"
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"]
+                    args: ["node dist/libs/retailer-item-bulk-upload/src/lib/api/upload-entity.main.js --entityFilePath {{inputs.parameters.entityPath}}"]
+                    envFrom:
+                      - configMapRef:
+                          name: dev-ribu-env     
+                    resources: # limit the resources
+                      limits:
+                        memory: 400Mi
+                        cpu: 1000m
+                      requests:
+                        memory: 200Mi 
+                        cpu: 10m 
+                    volumeMounts:                     # same syntax as k8s Pod spec
+                    - name: workdir
+                      mountPath: /workflow/output 
+                  metadata:
+                    labels:
+                      app: bulk-upload-dev
+                - name : release-lock
+                  inputs: 
+                    parameters:
+                      - name: retailerId
+                      - name: resultStatus
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["node", "dist/libs/retailer-item-bulk-upload/src/lib/api/release-lock.main.js", "--retailerId","{{inputs.parameters.retailerId}}","--status","{{inputs.parameters.resultStatus}}"]
+                    envFrom:
+                      - configMapRef:
+                          name: dev-ribu-env     
+                - name: check-successful-items
+                  container:
+                    image: oildex/jq:latest
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args:
+                    - |
+                      file_path="/workflow/output/successful-items.json"
+
+                      # Check if the file exists
+                      if [ -e "$file_path" ]; then
+                        echo "File exists"
+
+                        # Use jq to parse the JSON file and check the length of the array
+                        array_length=$(jq 'length' "$file_path")
+
+                        # Check if the array is not empty
+                        if [ "$array_length" -gt 0 ]; then
+                          echo "Array inside the file is not empty"
+                          echo "success" > /workflow/output/result.txt  # Store 'success' in the file
+                        else
+                          echo "Array inside the file is empty"
+                          echo "failure" > /workflow/output/result.txt  # Indicate failure if the array is empty
+                        fi
+                      else
+                        echo "File does not exist..."
+                        echo "failure" > /workflow/output/result.txt  # Indicate failure if the file does not exist
+                      fi
+                    volumeMounts:                     # same syntax as k8s Pod spec
+                    - name: workdir
+                      mountPath: /workflow/output
+                  outputs:
+                    parameters:
+                    - name: result
+                      valueFrom:
+                        path: /workflow/output/result.txt     
+                - name: exit-handler
+                  steps:
+                  - - name: check-successful-items
+                      template: check-successful-items
+                  - - name: final-step-success
+                      template: release-lock
+                      when: "{{workflow.status}} == Succeeded && {{steps.check-successful-items.outputs.parameters.result}} == 'success'"
+                      arguments:
+                        parameters:
+                        - name: retailerId
+                          value: "{{workflow.parameters.retailerId}}"
+                        - name: resultStatus
+                          value: "Succeeded"
+                  - - name: final-step-failure
+                      template: release-lock
+                      when: "{{workflow.status}} != Succeeded"
+                      arguments:
+                        parameters:
+                        - name: retailerId
+                          value: "{{workflow.parameters.retailerId}}"
+                        - name: resultStatus
+                          value: "Failed"
+
+                

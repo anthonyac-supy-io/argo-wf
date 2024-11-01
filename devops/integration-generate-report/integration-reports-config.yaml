@@ -1,0 +1,69 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: generate-reports-config
+ namespace: cicd
+data:
+  workflow: "5" 
+  template: "100"  
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prod-generate-reports-env
+  namespace: cicd
+data:
+  CORE_API_SERVICE_HOST: "api-prod-svc-active.prod"
+  CORE_API_SERVICE_PORT: "81"
+  REDIS_HOST_URL: "redis-cluster-prod-follower.prod"
+  REDIS_PORT: "6379"
+  SLACK_WEBHOOK: "https://hooks.slack.com/services/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"
+  SLACK_WEBHOOK_ENABLED: "true"
+  WEBSOCKET_DEFAULT_APP_ID: "default"
+  WEBSOCKET_DEFAULT_APP_KEY: "aad22b08fcb1bbb9846f"
+  WEBSOCKET_DEFAULT_APP_HOST: "soketi-prod.prod"
+  WEBSOCKET_DEFAULT_APP_PORT: "443"
+  GCLOUD_STORAGE_REPORTS_BASE_PATH: env/prod/reports
+  GCLOUD_STORAGE_BUCKET_NAME: supy-io-docs
+  NODE_OPTIONS: "--max-old-space-size=6144"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dev-generate-reports-env
+  namespace: cicd
+data:
+  CORE_API_SERVICE_HOST : "api-dev-svc.dev"
+  CORE_API_SERVICE_PORT: "81"
+  REDIS_HOST_URL: "redis-cluster-follower-external.dev"
+  # REDIS_HOST_URL: "redis-cluster-prod-follower.prod"
+  REDIS_PORT: "6379"
+  SLACK_WEBHOOK: "https://hooks.slack.com/services/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"
+  SLACK_WEBHOOK_ENABLED: "true"
+  WEBSOCKET_DEFAULT_APP_ID: "default"
+  WEBSOCKET_DEFAULT_APP_KEY: "0d81cd6d4bcbb4a9eaac" #0d81cd6d4bcbb4a9eaac
+  # WEBSOCKET_DEFAULT_APP_KEY: "aad22b08fcb1bbb9846f"
+  WEBSOCKET_DEFAULT_APP_HOST: "soketi-dev.dev"
+  # WEBSOCKET_DEFAULT_APP_HOST: "soketi-prod.prod"
+  WEBSOCKET_DEFAULT_APP_PORT: "443"
+  # GCLOUD_STORAGE_REPORTS_BASE_PATH: env/dev/reports
+  GCLOUD_STORAGE_REPORTS_BASE_PATH: env/prod/reports
+  GCLOUD_STORAGE_BUCKET_NAME: supy-io-docs
+  NODE_OPTIONS: "--max-old-space-size=6144"
+
+  NATS_SERVICE_NAME: 'generate-reports-workflow'
+  NATS_CORE_SERVICE_NAME: 'core-service'
+  NATS_SERVER: 'nats://nats-cluster-dev-0.nats-cluster-dev.dev.svc.cluster.local:4222,nats://nats-cluster-dev-1.nats-cluster-dev.dev.svc.cluster.local:4222,nats://nats-cluster-dev-2.nats-cluster-dev.dev.svc.cluster.local:4222'
+  NATS_SUBJECT_PREFIX:  'dev'
+  NATS_DEBUG:  'true'
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: generate-reports-image
+  namespace: cicd
+  labels:
+    workflows.argoproj.io/configmap-type: Parameter
+data:
+  DEV_IMAGE: "europe-west4-docker.pkg.dev/supy-development-400307/supy-argo-workflows/integration-generate-report-main:latest"
+  PROD_IMAGE: "europe-west4-docker.pkg.dev/supy-development-400307/supy-argo-workflows/integration-generate-report-main:latest"

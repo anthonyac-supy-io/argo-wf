@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: github-sensor
+  namespace: argo-events
+spec:
+  serviceAccountName: default
+  dependencies:
+    - name: github-dependency
+      eventSourceName: github-event-source
+      eventName: apievent
+  triggers:
+  - template:
+      name: github-trigger
+      k8s:
+        operation: create
+        group: argoproj.io
+        version: v1alpha1
+        resource: workflows
+        source:
+          resource:
+            apiVersion: argoproj.io/v1alpha1
+            kind: Workflow
+            metadata:
+              generateName: triggered-workflow-
+              namespace: argo-events
+            spec:
+              serviceAccountName: default
+              entrypoint: main
+              workflowTemplateRef:
+                name: clone-and-run-image-template
+

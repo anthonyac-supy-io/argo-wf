@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: integration-report-event-sources
+  namespace: cicd
+spec:
+  nats:
+    integration-generate-report-dev-event-sources:
+      # url of the nats service
+      url: nats://nats-cluster-dev.dev:4222
+      # jsonBody specifies that all event body payload coming from this
+      # source will be JSON
+      jsonBody: true
+      # subject name
+      subject: integration.workflow.integration-generate-report
+      # optional backoff time for connection retries.
+      # if not provided, default connection backoff time will be used.
+      connectionBackoff:
+        # duration in nanoseconds, or strings like "4s", "1m". following value is 10 seconds
+        duration: 10s
+        # how many backoffs
+        steps: 5
+        # factor to increase on each step.
+        # setting factor > 1 makes backoff exponential.
+        factor: 2
+        jitter: 0.2
+    integration-generate-report-prod-event-sources:
+      # url of the nats service
+      url: nats://nats-cluster-prod.prod:4222
+      # jsonBody specifies that all event body payload coming from this
+      # source will be JSON
+      jsonBody: true
+      # subject name
+      subject: integration.workflow.integration-generate-report
+      # optional backoff time for connection retries.
+      # if not provided, default connection backoff time will be used.
+      connectionBackoff:
+        # duration in nanoseconds, or strings like "4s", "1m". following value is 10 seconds
+        duration: 10s
+        # how many backoffs
+        steps: 5
+        # factor to increase on each step.
+        # setting factor > 1 makes backoff exponential.
+        factor: 2
+        jitter: 0.2

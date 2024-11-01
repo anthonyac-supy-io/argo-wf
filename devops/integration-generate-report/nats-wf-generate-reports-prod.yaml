@@ -1,0 +1,160 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: nats-integration-generate-report-prod
+  namespace: cicd
+spec:
+  template:
+    serviceAccountName: operate-workflow-sa
+  dependencies:
+    - name: nats-dep
+      eventSourceName: integration-report-event-sources
+      eventName: integration-generate-report-prod-event-sources
+  triggers:
+    - template:
+        name: integration-generate-report
+        k8s:
+          operation: create
+          parameters:
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.runUniqueId
+              dest: spec.arguments.parameters.0.value
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.reportType
+              dest: spec.arguments.parameters.1.value
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.retailerId
+              dest: spec.arguments.parameters.2.value
+            - src:
+                dependencyName: nats-dep
+                dataKey: body.userId
+              dest: spec.arguments.parameters.3.value
+            - src:
+                dependencyName: nats-dep
+                dataTemplate: "{{ .Input.body.runUniqueId | lower | substr 0 9  }}"
+              dest: metadata.name
+              operation: append                                  
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                name: export-report
+                namespace: cicd
+              spec:
+                serviceAccountName: operate-workflow-sa
+                entrypoint: export-report
+                synchronization:
+                    semaphore:
+                      configMapKeyRef:
+                        name: generate-reports-config
+                        key: workflow
+                onExit: exit-handler
+                x-common-secrets: &common-secrets
+                  - name: WEBSOCKET_DEFAULT_APP_SECRET
+                    valueFrom:
+                      secretKeyRef:
+                        key: DEFAULT_APP_SECRET_PROD
+                        name: soketi-secret
+                  - name: GCLOUD_STORAGE_SERVICE_ACCOUNT_KEY
+                    valueFrom:
+                      secretKeyRef:
+                        key: secret-prod
+                        name: gcloud-storage-service-account-key-secret
+                volumeClaimTemplates:            
+                - metadata:
+                    name: workdir                     
+                  spec:
+                    accessModes: [ "ReadWriteOnce" ]
+                    resources:
+                      requests:
+                        storage: 1Gi 
+                arguments:
+                  parameters:
+                  - name: reportId
+                  - name: reportType
+                  - name: retailerId
+                  - name: userId
+                  - name: IMAGE_NAME
+                    valueFrom:
+                      configMapKeyRef:
+                        name: generate-reports-image
+                        key: PROD_IMAGE
+                templates:
+                - name: export-report
+                  steps: 
+                  - - name: fetch-data
+                      template: fetch-report-data
+                  - - name: generate-report-sheets
+                      template: generate-report
+
+                - name: fetch-report-data
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args: ["node dist/libs/integration-generate-report/src/lib/api/fetch-report-data.main.js --uniqueId {{workflow.parameters.reportId}} --reportType {{workflow.parameters.reportType}} --retailerId {{workflow.parameters.retailerId}} --userId {{workflow.parameters.userId}}"]
+                    envFrom:
+                      - configMapRef:
+                          name: prod-generate-reports-env
+                    env: *common-secrets 
+                    resources: # limit the resources
+                      limits:
+                        memory: 6000Mi
+                        cpu: 2000m 
+                    volumeMounts:
+                    - name: workdir
+                      mountPath: /workflow/output 
+                - name: generate-report
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args: ["node dist/libs/integration-generate-report/src/lib/api/generate-report-sheet.main.js --uniqueId {{workflow.parameters.reportId}} --reportType {{workflow.parameters.reportType}} --retailerId {{workflow.parameters.retailerId}} --userId {{workflow.parameters.userId}}"] 
+                    envFrom:
+                      - configMapRef:
+                          name: prod-generate-reports-env
+                    env: *common-secrets 
+                    resources: # limit the resources
+                      limits:
+                        memory: 6000Mi
+                        cpu: 2000m 
+                    volumeMounts:
+                    - name: workdir
+                      mountPath: /workflow/output 
+                - name: upload-report
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args: ["node dist/libs/integration-generate-report/src/lib/api/upload-report.main.js --uniqueId {{workflow.parameters.reportId}} --reportType {{workflow.parameters.reportType}} --retailerId {{workflow.parameters.retailerId}} --userId {{workflow.parameters.userId}}"] 
+                    envFrom:
+                      - configMapRef:
+                          name: prod-generate-reports-env
+                    env: *common-secrets 
+                    resources: # limit the resources
+                      limits:
+                        memory: 2000Mi
+                        cpu: 1000m 
+                    volumeMounts:
+                    - name: workdir
+                      mountPath: /workflow/output
+                - name: release-lock
+                  container:
+                    image: "{{workflow.parameters.IMAGE_NAME}}"
+                    imagePullPolicy: Always
+                    command: ["/bin/sh","-c"] 
+                    args: ["node dist/libs/integration-generate-report/src/lib/api/release-lock.main.js --uniqueId {{workflow.parameters.reportId}} --reportType {{workflow.parameters.reportType}} --retailerId {{workflow.parameters.retailerId}} --userId {{workflow.parameters.userId}}"] 
+                    envFrom:
+                      - configMapRef:
+                          name: prod-generate-reports-env
+                    env: *common-secrets 
+                - name: exit-handler
+                  steps:
+                  - - name: release-lock-handle
+                      template: release-lock 
+
+                

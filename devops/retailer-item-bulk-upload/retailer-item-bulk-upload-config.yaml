@@ -1,0 +1,56 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+ name: bulk-upload-config
+ namespace: cicd
+data:
+  workflow: "1" 
+  template: "50"  
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prod-ribu-env
+  namespace: cicd
+data:
+  REDIS_HOST_URL: "redis-cluster-prod-follower.prod"
+  REDIS_PORT: "6379"
+  SLACK_WEBHOOK: "https://hooks.slack.com/services/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"
+  SLACK_WEBHOOK_ENABLED: "true"
+
+  NATS_CATALOG_SERVICE_NAME: 'catalog-service'
+  NATS_CORE_SERVICE_NAME: 'core-service'
+  NATS_INVENTORY_SERVICE_NAME: 'inventory-service'
+  NATS_SERVICE_NAME: 'wf-ribu-bulk-upload'
+  NATS_SERVER: "nats://nats-cluster-prod-0.nats-cluster-prod.prod.svc.cluster.local:4222,nats://nats-cluster-prod-1.nats-cluster-prod.prod.svc.cluster.local:4222,nats://nats-cluster-prod-2.nats-cluster-prod.prod.svc.cluster.local:4222"
+  NATS_SUBJECT_PREFIX: "prod"
+  NATS_DEBUG: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dev-ribu-env
+  namespace: cicd
+data:
+  REDIS_HOST_URL: "redis-cluster-follower-external.dev"
+  REDIS_PORT: "6379"
+  SLACK_WEBHOOK: "https://hooks.slack.com/services/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"
+  SLACK_WEBHOOK_ENABLED: "true"
+  NATS_CATALOG_SERVICE_NAME: 'catalog-service'
+  NATS_CORE_SERVICE_NAME: 'core-service'
+  NATS_INVENTORY_SERVICE_NAME: 'inventory-service'
+  NATS_SERVICE_NAME: 'wf-ribu-bulk-upload'
+  NATS_SERVER: "nats://nats-cluster-dev-0.nats-cluster-dev.dev.svc.cluster.local:4222,nats://nats-cluster-dev-1.nats-cluster-dev.dev.svc.cluster.local:4222,nats://nats-cluster-dev-2.nats-cluster-dev.dev.svc.cluster.local:4222"
+  NATS_SUBJECT_PREFIX: "dev"
+  NATS_DEBUG: "true"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ribu-image
+  namespace: cicd
+  labels:
+    workflows.argoproj.io/configmap-type: Parameter
+data:
+  DEV_IMAGE: "europe-west4-docker.pkg.dev/supy-development-400307/supy-argo-workflows/retailer-item-bulk-upload-main:latest"
+  PROD_IMAGE: "europe-west4-docker.pkg.dev/supy-development-400307/supy-argo-workflows/retailer-item-bulk-upload-main:latest"

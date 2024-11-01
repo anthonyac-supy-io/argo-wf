@@ -1,0 +1,276 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: github-argowf-migrate-reports-push-sensor
+  namespace: cicd
+spec:
+  template:
+    serviceAccountName: operate-workflow-sa
+  dependencies:
+    - name: github-api-dep
+      eventSourceName: github-supy-event-source
+      eventName: githubevent
+      filters:
+        data:
+          - path: body.X-GitHub-Event
+            type: string
+            value:
+              - push
+          - path: body.ref
+            type: string
+            value:
+              - refs/heads/main
+          - path: body.repository.name
+            type: string
+            value:
+              - supy-argo-workflows
+  triggers:
+    - template:
+        name: api-trigger
+        k8s:
+          group: argoproj.io
+          version: v1alpha1
+          resource: workflows
+          operation: create
+          parameters:
+            - src:
+                dependencyName: github-api-dep
+                dataKey: body.repository.clone_url
+              dest: spec.arguments.parameters.0.value
+            - src:
+                dependencyName: github-api-dep
+                dataKey: body.ref
+              dest: spec.arguments.parameters.1.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.ref | replace \"refs/heads/\" \"\" }}"
+              dest: spec.arguments.parameters.2.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.repository.name | lower  }}"
+              dest: spec.arguments.parameters.3.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.head_commit.id | substr 0 9 }}" 
+              dest: spec.arguments.parameters.4.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.ref | replace \"refs/heads/\" \"\" | replace \"/\" \"-\"}}"
+              dest: spec.arguments.parameters.5.value
+            - src:
+                dependencyName: github-api-dep
+                dataKey: body.before
+              dest: spec.arguments.parameters.6.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "g-{{ .Input.body.repository.name | lower }}-{{ .Input.body.ref | replace \"refs/heads/\" \"\" | replace \"/\" \"-\"}}-{{ .Input.body.head_commit.id | substr 0 9 }}"
+              dest: spec.arguments.parameters.7.value
+            - src:
+                dependencyName: github-api-dep
+                dataKey: body.compare
+              dest: spec.arguments.parameters.8.value
+            - src:
+                dependencyName: github-api-dep
+                dataKey: body.head_commit.url
+              dest: spec.arguments.parameters.9.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "https://argo-wf.ops.supy.io/workflows/cicd/g-{{ .Input.body.repository.name | lower  }}-{{ .Input.body.ref | replace \"refs/heads/\" \"\" | replace \"/\" \"-\"}}-{{ .Input.body.head_commit.id | substr 0 9 }}"
+              dest: spec.arguments.parameters.10.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.repository.name | lower | replace \"supy-\" \"\"  }}"
+              dest: spec.arguments.parameters.11.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.head_commit.message }}"
+              dest: spec.arguments.parameters.12.value
+            - src:
+                dependencyName: github-api-dep
+                dataTemplate: "{{ .Input.body.repository.name | lower  }}-{{ .Input.body.ref | replace \"refs/heads/\" \"\" | replace \"/\" \"-\"}}-{{ .Input.body.head_commit.id | substr 0 9 }}"
+              dest: metadata.name
+              operation: append
+          source:
+            resource:
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                name: g-
+              spec:
+                serviceAccountName: operate-workflow-sa
+                entrypoint: api-ci-template
+                arguments:
+                  parameters:
+                  - name: repo-url
+                  - name: branch-path
+                  - name: branch-name
+                  - name: repo-name
+                  - name: sha
+                  - name: branch-name-custom
+                  - name: previous-commit
+                  - name: wf-name
+                  - name: compare-url
+                  - name: commit-url
+                  - name: wf-url
+                  - name: app-name
+                  - name: head-commit-msg
+                volumes:
+                - name: artifacts-registry-access
+                  secret:
+                    secretName: workload-identity-sa-key-secret
+                - name: github-token
+                  secret:
+                    secretName: github-supy-token-secret
+                - name: github-token-only
+                  secret:
+                    secretName: github-supy-token-only-secret
+                - name: npmrc-secret
+                  secret:
+                    secretName: npmrc-backend-secret
+                - name: semantic-release-secret
+                  secret:
+                    secretName: semantic-release-secret
+                - name: supy-bot-gpg-secret
+                  secret:
+                    secretName: supy-bot-gpg-secret
+                templates:
+                - name: api-ci-template
+                  dag:
+                    tasks:
+                    - name: welcome
+                      template: welcome
+
+                    - name: checkout
+                      template: checkout
+                      depends: "welcome.Succeeded"
+                      when: '{{tasks.welcome.outputs.parameters.proceed}} == true'
+
+                    - name: build-docker-image1
+                      template: build-docker-image1
+                      depends: "checkout.Succeeded"
+                      arguments:
+                        artifacts:
+                        - name: code
+                          from: "{{tasks.checkout.outputs.artifacts.code}}"
+
+
+                - name: welcome
+                  container:
+                    image: alpine/git:latest
+                    command: ["sh", "-c"]
+                    args: ["apk add --no-cache curl curl-dev && \
+                          curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.branch-name}}> - :eyes: _Checking_ whether to run CI/CD Pipeline <{{workflow.parameters.repo-url}}|{{workflow.parameters.branch-name}}> for <{{workflow.parameters.repo-url}}|{{workflow.parameters.repo-name}}> / `{{workflow.parameters.branch-name}}` :eyes: . \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack && \
+                          sleep 2 && \
+                          export SKIP_CI=$(echo \"{{workflow.parameters.head-commit-msg}}\" | grep \"\\[skip-ci\\]\") && \
+                          if [[ \"$SKIP_CI\" != \"\" ]] ; then curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.branch-name}}> - :black_square_for_stop: _Skipping_ CI for `{{workflow.parameters.repo-url}}/{{workflow.parameters.branch-name}}` :black_square_for_stop:. \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack ; echo false > /tmp/proceed ; \
+                          else curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.branch-name}}> - :fast_forward: _Running_ CI for `{{workflow.parameters.repo-url}}/{{workflow.parameters.branch-name}}` :fast_forward:. \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack ; echo true > /tmp/proceed ; fi "]
+                  outputs:
+                    parameters:
+                      - name: proceed
+                        valueFrom:
+                          path: /tmp/proceed
+                  metadata:
+                    labels:
+                      cicd: "welcome-{{workflow.parameters.branch-name-custom}}-{{workflow.parameters.sha}}"
+
+                - name: checkout
+                  inputs:
+                    artifacts:
+                    - name: source
+                      path: /src
+                      git:
+                        repo: "{{workflow.parameters.repo-url}}"
+                        revision: "{{workflow.parameters.branch-name}}"
+                        usernameSecret:
+                          name: github-supy-token-secret
+                          key: user
+                        passwordSecret:
+                          name: github-supy-token-secret
+                          key: token
+                  container:
+                    image: alpine/git:latest
+                    command: ["sh", "-c"]
+                    args: ["apk add --no-cache curl curl-dev && \
+                            curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.sha}}> - :robot_face: Started _CI/CD Pipeline_ for <{{workflow.parameters.repo-url}}|{{workflow.parameters.repo-name}}> / `{{workflow.parameters.branch-name}}` :rocket: by this *commit* <{{workflow.parameters.commit-url}}|{{workflow.parameters.sha}}>. \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack && \
+                            sleep 2 && \
+                            curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.sha}}> - :mag: Click <{{workflow.parameters.compare-url}}|Here> to compare. \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack && \
+                            cd /src && git checkout {{workflow.parameters.branch-name}} && git status"]
+                  outputs:
+                    artifacts:
+                    - name: code
+                      path: /src
+                  metadata:
+                    labels:
+                      cicd: "checkout-{{workflow.parameters.branch-name-custom}}-{{workflow.parameters.sha}}"
+                      
+                - name: build-docker-image1
+                  inputs:
+                    artifacts:
+                    - name: code
+                      path: /src
+                  container:
+                    image: docker:19.03.13
+                    command: ["sh", "-c"]
+                    args: ["apk add --no-cache curl curl-dev && \
+                          curl -d '{\"channel\":\"cicd\",\"message\":\"<{{workflow.parameters.wf-url}}|{{workflow.parameters.sha}}> - :building_construction: _Building_ Image for `{{workflow.parameters.repo-name}}/{{workflow.parameters.branch-name}}` :rocket:. \"}' -H \"Content-Type: application/json\" -X POST http://10.0.9.2:12000/wh/slack && \
+                          until docker ps; do sleep 3 ; done && cd /src && \
+                          cp /npmrc-secret/npmrc ./.npmrc && \
+                          cp /semantic-release-secret/env ./.env.release && \
+                          cp /gpg-secret/private-key ./private-key.asc && \
+                          docker build . --file ./libs/integration-generate-report/dockerfile --build-arg BUILD_CONFIG=production --build-arg NX_SKIP_NX_CACHE=false --build-arg NX_CLOUD_ACCESS_TOKEN=$NX_CLOUD_ACCESS_TOKEN --build-arg NX_CLOUD_ENCRYPTION_KEY=$NX_CLOUD_ENCRYPTION_KEY --build-arg NX_CLOUD_ENV_NAME=cicd --build-arg NX_BRANCH={{workflow.parameters.branch-name}} --build-arg NX_RUN_GROUP={{workflow.parameters.repo-name}}/integration-generate-report-{{workflow.parameters.branch-name}}/{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/integration-generate-report-main:{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/export-report-ckv2-b2b:latest --target run && \
+                          docker image ls && \
+                          cat /secret/key | base64 -d  | docker login -u _json_key --password-stdin https://europe-west4-docker.pkg.dev && \
+                          docker push europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/export-report-ckv2-b2b"] #{{workflow.parameters.branch-name-custom}}
+                    env:
+                    - name: DOCKER_HOST               # the docker daemon can be access on the standard port on localhost
+                      value: 127.0.0.1
+                    - name: NX_CLOUD_ACCESS_TOKEN
+                      valueFrom:
+                        secretKeyRef:
+                          name: nx-cloud-token-secret
+                          key: nx-token-{{ workflow.parameters.app-name }}
+                          optional: true
+                    - name: NX_CLOUD_ENCRYPTION_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: nx-cloud-token-secret
+                          key: nx-encryption-key
+                          optional: true
+                    - name: GIT_GPG_KEY_ID
+                      valueFrom:
+                        secretKeyRef:
+                          name: supy-bot-gpg-secret
+                          key: key-id
+                    volumeMounts:
+                    - name: artifacts-registry-access     
+                      mountPath: "/secret"
+                    - name: npmrc-secret
+                      mountPath: "/npmrc-secret"
+                    - name: semantic-release-secret
+                      mountPath: "/semantic-release-secret"
+                    - name: supy-bot-gpg-secret
+                      mountPath: "/gpg-secret"
+                    resources:
+                      limits:
+                        memory: 4Gi
+                        cpu: 1.5
+                      requests:
+                        cpu: 1.5
+                        memory: 4Gi
+                  metadata:
+                    labels:
+                      cicd: "build-image-ribu-{{workflow.parameters.branch-name-custom}}-{{workflow.parameters.sha}}"  
+                  sidecars:
+                  - name: dind
+                    image: docker:19.03.13-dind          # Docker already provides an image for running a Docker daemon
+                    command: ["dockerd-entrypoint.sh"]
+                    env:
+                      - name: DOCKER_TLS_CERTDIR         # Docker TLS env config
+                        value: ""
+                    securityContext:
+                      privileged: true                # the Docker daemon can only run in a privileged container
+                    # mirrorVolumeMounts will mount the same volumes specified in the main container
+                    # to the sidecar (including artifacts), at the same mountPaths. This enables
+                    # dind daemon to (partially) see the same filesystem as the main container in
+                    # order to use features such as docker volume binding.
+                    mirrorVolumeMounts: true

@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: clone-and-run-image-template
+  namespace: argo-events
+spec:
+  serviceAccountName: default
+  entrypoint: main
+  volumes:
+  - name: workdir
+    persistentVolumeClaim:
+      claimName: workdir-pvc 
+  templates:
+  - name: main
+    steps:
+    - - name: clean-workdir
+        template: clean-workdir
+    - - name: clone-repo
+        template: clone-repo
+    - - name: build-and-run-image
+        template: build-and-run-image
+
+  - name: clean-workdir
+    container:
+      image: busybox
+      command: ["/bin/sh", "-c"]
+      args: ["rm -rf /workdir/* /workdir/.* || true"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /workdir
+
+  - name: clone-repo
+    container:
+      image: docker:git
+      command: ["/bin/sh", "-c"]
+      args: ["git clone https://github.com/marina-supy-io/test-argo /workdir"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /workdir
+
+  - name: build-and-run-image
+    container:
+      image: gcr.io/kaniko-project/executor:latest
+      args: ["--dockerfile=/workdir/Dockerfile",
+             "--context=dir:///workdir",
+             "--destination=europe-west4-docker.pkg.dev/supy-development-400307/test/marina:001"]
+      volumeMounts:
+      - name: workdir
+        mountPath: /workdir

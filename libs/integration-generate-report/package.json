@@ -1,0 +1,9 @@
+{
+  "name": "@supy/integration-generate-report",
+  "version": "0.0.0",
+  "private": true,
+  "type": "commonjs",
+  "dependencies": {
+    "@supy/common": "file:../common"
+  }
+}
