@@ -1,15 +1,15 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Sensor
 metadata:
-  name: github-argowf-migrate-reports-push-sensor
-  namespace: cicd
+  name: github-argowf-retailer-item-bulk-upload-push-sensor
+  namespace: argo-events
 spec:
   template:
-    serviceAccountName: operate-workflow-sa
+  serviceAccountName: default
   dependencies:
     - name: github-api-dep
-      eventSourceName: github-supy-event-source
-      eventName: githubevent
+      eventSourceName: github-event-source-aac
+      eventName: apievent
       filters:
         data:
           - path: body.X-GitHub-Event
@@ -97,7 +97,7 @@ spec:
               metadata:
                 name: g-
               spec:
-                serviceAccountName: operate-workflow-sa
+                serviceAccountName: default
                 entrypoint: api-ci-template
                 arguments:
                   parameters:
@@ -217,10 +217,10 @@ spec:
                           cp /npmrc-secret/npmrc ./.npmrc && \
                           cp /semantic-release-secret/env ./.env.release && \
                           cp /gpg-secret/private-key ./private-key.asc && \
-                          docker build . --file ./libs/integration-generate-report/dockerfile --build-arg BUILD_CONFIG=production --build-arg NX_SKIP_NX_CACHE=false --build-arg NX_CLOUD_ACCESS_TOKEN=$NX_CLOUD_ACCESS_TOKEN --build-arg NX_CLOUD_ENCRYPTION_KEY=$NX_CLOUD_ENCRYPTION_KEY --build-arg NX_CLOUD_ENV_NAME=cicd --build-arg NX_BRANCH={{workflow.parameters.branch-name}} --build-arg NX_RUN_GROUP={{workflow.parameters.repo-name}}/integration-generate-report-{{workflow.parameters.branch-name}}/{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/integration-generate-report-main:{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/export-report-ckv2-b2b:latest --target run && \
+                          docker build . --file ./libs/retailer-item-bulk-upload/dockerfile --build-arg BUILD_CONFIG=production --build-arg NX_SKIP_NX_CACHE=false --build-arg NX_CLOUD_ACCESS_TOKEN=$NX_CLOUD_ACCESS_TOKEN --build-arg NX_CLOUD_ENCRYPTION_KEY=$NX_CLOUD_ENCRYPTION_KEY --build-arg NX_CLOUD_ENV_NAME=cicd --build-arg NX_BRANCH={{workflow.parameters.branch-name}} --build-arg NX_RUN_GROUP={{workflow.parameters.repo-name}}/retailer-item-bulk-upload-{{workflow.parameters.branch-name}}/{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/ribu-aac:{{workflow.parameters.sha}} -t europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/ribu-aac:latest --target run && \
                           docker image ls && \
                           cat /secret/key | base64 -d  | docker login -u _json_key --password-stdin https://europe-west4-docker.pkg.dev && \
-                          docker push europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/export-report-ckv2-b2b"] #{{workflow.parameters.branch-name-custom}}
+                          docker push europe-west4-docker.pkg.dev/supy-development-400307/{{workflow.parameters.repo-name}}/ribu-aac"] #{{workflow.parameters.branch-name-custom}}
                     env:
                     - name: DOCKER_HOST               # the docker daemon can be access on the standard port on localhost
                       value: 127.0.0.1

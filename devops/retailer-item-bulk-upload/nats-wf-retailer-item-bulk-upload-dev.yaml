@@ -1,15 +1,15 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Sensor
 metadata:
-  name: nats-retailer-item-bulk-upload-dev
-  namespace: cicd
+  name: aac-nats-retailer-item-bulk-upload-dev
+  namespace: argo-events
 spec:
   template:
-    serviceAccountName: operate-workflow-sa
+    serviceAccountName: default
   dependencies:
     - name: nats-dep
       eventSourceName: catalog-event-sources
-      eventName: retailer-item-bulk-upload-dev-event-sources
+      eventName: retailer-item-bulk-upload-dev-event-sources-aac
 
   triggers:
     - template:
@@ -36,9 +36,9 @@ spec:
               kind: Workflow
               metadata:
                 name: bulk-upload
-                namespace: cicd
+                namespace: argo-events
               spec:
-                serviceAccountName: operate-workflow-sa
+                serviceAccountName: default
                 entrypoint: bulk-upload
                 onExit: exit-handler
                 volumeClaimTemplates:            

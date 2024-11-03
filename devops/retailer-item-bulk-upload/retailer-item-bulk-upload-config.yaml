@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
  name: bulk-upload-config
- namespace: cicd
+ namespace: argo-events
 data:
   workflow: "1" 
   template: "50"  
@@ -11,7 +11,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: prod-ribu-env
-  namespace: cicd
+  namespace: argo-events
 data:
   REDIS_HOST_URL: "redis-cluster-prod-follower.prod"
   REDIS_PORT: "6379"
@@ -30,7 +30,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: dev-ribu-env
-  namespace: cicd
+  namespace: argo-events
 data:
   REDIS_HOST_URL: "redis-cluster-follower-external.dev"
   REDIS_PORT: "6379"
@@ -48,7 +48,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: ribu-image
-  namespace: cicd
+  namespace: argo-events
   labels:
     workflows.argoproj.io/configmap-type: Parameter
 data:

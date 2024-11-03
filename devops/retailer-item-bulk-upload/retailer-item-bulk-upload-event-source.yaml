@@ -2,17 +2,17 @@ apiVersion: argoproj.io/v1alpha1
 kind: EventSource
 metadata:
   name: catalog-event-sources
-  namespace: cicd
+  namespace: argo-events
 spec:
   nats:
-    retailer-item-bulk-upload-dev-event-sources:
+    retailer-item-bulk-upload-dev-event-sources-aac:
       # url of the nats service
       url: nats://nats-cluster-dev.dev:4222
       # jsonBody specifies that all event body payload coming from this
       # source will be JSON
       jsonBody: true
       # subject name
-      subject: catalog.workflow.retailer-item-bulk-upload
+      subject: catalog.workflow.retailer-item-bulk-upload.aac
       # optional backoff time for connection retries.
       # if not provided, default connection backoff time will be used.
       connectionBackoff:
@@ -24,14 +24,14 @@ spec:
         # setting factor > 1 makes backoff exponential.
         factor: 2
         jitter: 0.2
-    retailer-item-bulk-upload-prod-event-sources:
+    retailer-item-bulk-upload-prod-event-sources-aac:
       # url of the nats service
       url: nats://nats-cluster-prod.prod:4222
       # jsonBody specifies that all event body payload coming from this
       # source will be JSON
       jsonBody: true
       # subject name
-      subject: catalog.workflow.retailer-item-bulk-upload
+      subject: catalog.workflow.retailer-item-bulk-upload.aac
       # optional backoff time for connection retries.
       # if not provided, default connection backoff time will be used.
       connectionBackoff:

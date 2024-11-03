@@ -2,10 +2,10 @@ apiVersion: argoproj.io/v1alpha1
 kind: Sensor
 metadata:
   name: nats-integration-generate-report-prod
-  namespace: cicd
+  namespace: argo-events
 spec:
   template:
-    serviceAccountName: operate-workflow-sa
+    serviceAccountName: default
   dependencies:
     - name: nats-dep
       eventSourceName: integration-report-event-sources
@@ -43,9 +43,9 @@ spec:
               kind: Workflow
               metadata:
                 name: export-report
-                namespace: cicd
+                namespace: argo-events
               spec:
-                serviceAccountName: operate-workflow-sa
+                serviceAccountName: default
                 entrypoint: export-report
                 synchronization:
                     semaphore:
